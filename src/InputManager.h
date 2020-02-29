@@ -12,11 +12,11 @@ class InputManager {
     String _invalidChar;
     long unsigned _previousMillis;
 
-    void clear();
    public:
     InputManager(Keypad &keypad);
-    void listen();
-    char* capturedInput();
+    bool listen();
+    void clear();
+    char* getInput() { return inputsPtr; }
 };
 
 #endif

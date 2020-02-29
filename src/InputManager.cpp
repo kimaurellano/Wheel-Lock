@@ -6,7 +6,7 @@ InputManager::InputManager(Keypad &keypad) : _keypad(keypad) {
     _keypad = keypad;
 }
 
-void InputManager::listen() {
+bool InputManager::listen() {
     long unsigned currentMillis = millis();
     if ((currentMillis - _previousMillis) >= 50) {
         _previousMillis = currentMillis;
@@ -17,8 +17,7 @@ void InputManager::listen() {
         if (c == '#') {
             Serial.println("Finalized.");
 
-            // Avoid appending the last input session to the curren session
-            clear();
+            return false;
         }
 
         // Non-enter key input means user is typing
@@ -32,6 +31,8 @@ void InputManager::listen() {
             clear();
         }
     }
+
+    return true;
 }
 
 void InputManager::clear() {
@@ -43,8 +44,4 @@ void InputManager::clear() {
     charIdx = 0;
 
     Serial.println(F("Cache cleared."));
-}
-
-char* InputManager::capturedInput(){
-    return inputsPtr;
 }
