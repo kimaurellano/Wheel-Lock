@@ -1,8 +1,6 @@
 #include "InputManager.h"
 #include <Adafruit_Fingerprint.h>
 #include <LiquidCrystal_I2C.h>
-#include <SD.h>
-#include <SPI.h>
 #include <Keypad.h>
 
 #define fingerSensorSerial Serial1
@@ -95,10 +93,11 @@ void loop() {
 
         //********************************************Registration
         if (result == FINGERPRINT_NOTFOUND) {
-            // Serial.println(F("finger is currently not registered!"));
-            // Serial.print(F("Pick slot(1-5):"));
+            Serial.println(F("finger is currently not registered!"));
+            Serial.print(F("Pick slot(1-5):"));
 
-            inputManager.listen();
+            while (inputManager.listen())
+                ;
 
             Serial.println(F("DONE"));
 
