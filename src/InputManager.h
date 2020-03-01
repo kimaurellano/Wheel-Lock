@@ -7,7 +7,7 @@ class InputManager {
    private:
     Keypad &_keypad;
     int charIdx = 0;
-    char inputs[10];
+    char inputs[64];
     char* inputsPtr = inputs;
     String _invalidChar;
     long unsigned _previousMillis;
