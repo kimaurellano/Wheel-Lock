@@ -15,7 +15,8 @@ bool InputManager::listen() {
 
         // Enter key
         if (c == '#') {
-            Serial.println("Finalized.");
+            Serial.println("\nFinalized.");
+            Serial.println(inputsPtr);
 
             return false;
         }
@@ -24,7 +25,7 @@ bool InputManager::listen() {
         if (c && c != '#' && c != '*') {
             inputs[charIdx++] = c;
 
-            Serial.println(c);
+            Serial.print(c);
         }
 
         if(c == '*'){
