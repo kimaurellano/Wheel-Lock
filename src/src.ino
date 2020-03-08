@@ -4,6 +4,7 @@
 #include <SD.h>
 #include <SPI.h>
 #include "InputManager.h"
+#include "User.h"
 
 #define fingerSensorSerial Serial1
 
@@ -29,9 +30,12 @@ File userData;
 char t[256] = {'\0'};  // This will hold all the numbers
 char* tPtr = t;
 
+const int ON_REGISTER = 1;
+const int REGISTERED = 2;
+const int UNREGISTER = 3;
 int otp = 0;
 int ackOtp = 0;
-bool onUnlock = false;
+bool onControl = false;
 const int LOCK = 45;
 
 // State machines for sensors.
@@ -74,12 +78,23 @@ void setup() {
     Serial.print(finger.templateCount);
     Serial.println(F(" templates"));
 
+    for (uint16_t i = 1; i <= 5; i++) {
+        Serial.println("------------------------------------");
+        Serial.print("Attempting to load #");
+        Serial.println(i);
+        uint8_t p = finger.loadModel(i);
+        Serial.print("Template: ");
+        if (p == FINGERPRINT_OK) {
+            Serial.println(i);
+        } else {
+            Serial.println(F("NOT FOUND."));
+        }
+    }
+
     //********************************************SD Card
     while (!SD.begin(53)) {
         Serial.println(F("SD Error."));
     }
-
-    // SD.remove("userdata.txt");
 
     // Check for existing file
     if (SD.exists("userdata.txt")) {
@@ -116,7 +131,7 @@ void loop() {
         }
     }
 
-    if ((currentMillis - previousMillisLock) >= 50 && onUnlock) {
+    if ((currentMillis - previousMillisLock) >= 50 && onControl) {
         previousMillisFinger = currentMillis;
 
         digitalWrite(LOCK, HIGH);
@@ -149,6 +164,12 @@ void loop() {
 
                 return;
             }
+
+            if (!isAvailable(pickedSlot)) {
+                Serial.println(F("Slot is already occupied."));
+                return;
+            }
+
             inputManager.clear();
             Serial.println(F("Slot picked."));
 
@@ -159,26 +180,32 @@ void loop() {
             Serial.print(F("Phone set:"));
             Serial.println(cellNumber);
 
-            writeToStorage(cellNumber, 1);
+            User newUser;
+            newUser.setPhoneNumber(cellNumber);
+            newUser.setSlot(pickedSlot);
+            newUser.setStateOfUse(ON_REGISTER);
+            createUserData(newUser);
 
             inputManager.clear();
 
+            // Register finger should come last in the process.
             registerFinger(pickedSlot);
+
+            // Id is the same as the picked slot.
+            updateUserData(pickedSlot, '1');
 
             return;
         } else if (result == FINGERPRINT_OK) {
-            /* TODO:
-             *  Find which slot the id corresponds
-             */
             int fingerId = finger.fingerID;
 
             verifyUser(fingerId);
         }
     }
-
-
 }
 
+// Checks the content of the userdata file
+// if the current scanned finger does exists
+// and then sends OTP
 void verifyUser(int fingerId) {
     userData = SD.open("userdata.txt");
     if (userData) {
@@ -226,11 +253,17 @@ void verifyUser(int fingerId) {
                         Serial.print(F("Recieved OTP: "));
                         Serial.println(ackOtp);
 
+                        // Enable user control of the app
                         if (ackOtp == otp) {
-                            Serial.println("OTP verified.");
-                            onUnlock = true;
+                            Serial.println(F("OTP verified."));
+                            onControl = true;
+
+                            User user = getUserData(fingerId);
+                            if (user.getStateOfUse() == '2') {
+                                // TODO Remove user
+                            }
                         } else {
-                            Serial.println("OTP invalid.");
+                            Serial.println(F("OTP invalid."));
                         }
 
                         // Avoid unnecessary loop
@@ -254,7 +287,8 @@ void verifyUser(int fingerId) {
     userData.close();
 }
 
-void writeToStorage(String phoneNumber, int slot) {
+// Writes and appends only
+void createUserData(User& user) {
     /*  TODO:
      *    Write to file with format: <fingerid>, <phonenumber>
      *    Encrypt the file
@@ -270,11 +304,150 @@ void writeToStorage(String phoneNumber, int slot) {
 
     // Data format: <FingerId> <PhoneNumber> <Slot>
     char buffer[256];
-    sprintf(buffer, "%d,%s", slot, phoneNumber.c_str());
+    sprintf(buffer, "%d,%s,%d", user.getSlot(), user.getPhoneNumber().c_str(), user.getStateOfUse());
 
     userData.println(buffer);
     userData.close();
-    Serial.println(F("Data written successfully."));
+    Serial.println(F("***New User***"));
+    Serial.print(F("Phone:"));
+    Serial.println(user.getPhoneNumber().c_str());
+    Serial.print(F("Slot:"));
+    Serial.println(user.getSlot());
+    Serial.println(F("Data written successfully!"));
+}
+
+void updateUserData(int id, char stateOfUse) {
+    char* data = read("userdata.txt");
+    Serial.println(F("user data content"));
+    Serial.println(data);
+
+    char buffer[256];
+    char* bufferPtr = buffer;
+    strcpy(buffer, "");
+
+    //
+    char* targetUser;
+
+    // Get per '\n(new line)' delimiter
+    char* line = strtok(data, "\n");
+    while (line != nullptr) {
+        Serial.print(F("Line content:"));
+        Serial.println(line);
+
+        int targetId = atoi(String(line[0]).c_str());
+        if (targetId == id) {
+            char cache[13];
+            char* cachePtr = cache;
+            for (size_t i = 0; i <= 13; i++) {
+                if (i == 13) {
+                    cache[i] = stateOfUse;
+                    cache[i + 1] = '\0';
+                    break;
+                }
+                cache[i] = line[i];
+            }
+            Serial.println(cachePtr);
+            Serial.println(F("\nFOUND!"));
+
+            strcat(buffer, cachePtr);
+            strcat(buffer, "\n");
+        } else {
+            strcat(buffer, line);
+            strcat(buffer, "\n");
+        }
+
+        line = strtok(nullptr, "\n");
+    }
+
+    Serial.println(F("Finished writing."));
+    Serial.println(bufferPtr);
+
+    SD.remove("userdata.txt");
+
+    File userData = SD.open("userdata.txt", FILE_WRITE);
+    userData.println(bufferPtr);
+    userData.close();
+}
+
+void deleteUserData(int id) {
+    char buffer[256];
+    char* bufferPtr = buffer;
+    strcpy(buffer, "");
+
+    File data = SD.open("userdata.txt");
+    if (data) {
+        while (data.available()) {
+            char* line = strdup(data.readStringUntil('\n').c_str());
+            int targetId = atoi(String(line[0]).c_str());
+            if (targetId == id) {
+                continue;
+            }
+
+            strcat(buffer, line);
+            strcat(buffer, "\n");
+        }
+
+        data.close();
+    }
+
+    SD.remove("userdata.txt");
+    data = SD.open("userdata.txt", FILE_WRITE);
+    data.println(bufferPtr);
+    data.close();
+}
+
+User getUserData(int id) {
+    Serial.println(F("Getting user data..."));
+    File data = SD.open("userdata.txt");
+    if (data) {
+        while (data.available()) {
+            char* line = strdup(data.readStringUntil('\n').c_str());
+            int targetId = atoi(String(line[0]).c_str());
+            if (targetId == id) {
+                Serial.println(line);
+                Serial.println(F("FOUND! Parsing..."));
+
+                char cache[10];
+                char* cachePtr = cache;
+                int j = 0;
+                User user;
+                for (size_t i = 0; i <= 13; i++) {
+                    if (i == 0) {
+                        user.setSlot(id);
+                    }
+
+                    if (i >= 2 && i <= 11) {
+                        cache[j] = line[i];
+                        user.setPhoneNumber(cachePtr);
+                        j++;
+                    }
+
+                    if (i == 13) {
+                        user.setStateOfUse(atoi(String(line[i]).c_str()));
+                    }
+                }
+
+                return user;
+            }
+        }
+    }
+}
+
+char* read(char* fileName) {
+    File file = SD.open(fileName, FILE_READ);
+    if (file) {
+        char rawData[256];
+        char* rawDataPtr = rawData;
+        strcpy(rawData, "");
+        while (file.available()) {
+            // SD file content SHOULD BE COPIED not referenced
+            strcat(rawData, file.readString().c_str());
+        }
+
+        file.close();
+
+        return rawDataPtr;
+    }
 }
 
 void sendTo(char* number, String message) {
@@ -384,4 +557,22 @@ uint8_t registerFinger(int id) {
     }
 
     Serial.println(F("Successfully registered"));
+}
+
+bool isAvailable(int id) {
+    // NOTE: finger id is the same as the slot id
+    for (uint16_t i = 1; i <= 5; i++) {
+        Serial.println("------------------------------------");
+        Serial.print("Attempting to load #");
+        Serial.println(i);
+        uint8_t p = finger.loadModel(i);
+        Serial.print("Template: ");
+        if (p == FINGERPRINT_OK && p == id) {
+            Serial.println(i);
+            return false;
+        } else {
+            Serial.println(F("NOT FOUND."));
+            return true;
+        }
+    }
 }
