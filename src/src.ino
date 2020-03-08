@@ -116,6 +116,8 @@ void setup() {
     // lcd.print(F("WELCOME!"));
     // delay(1000);
 
+    randomSeed(analogRead(0));
+
     Serial.println(F("Started."));
 }
 
@@ -259,8 +261,11 @@ void verifyUser(int fingerId) {
                             onControl = true;
 
                             User user = getUserData(fingerId);
+                            // User is currently on registered state.
+                            // Scanning finger at this state will invoke
+                            // user data deletion.
                             if (user.getStateOfUse() == '2') {
-                                // TODO Remove user
+                                deleteUserData(fingerId);
                             }
                         } else {
                             Serial.println(F("OTP invalid."));
@@ -336,10 +341,10 @@ void updateUserData(int id, char stateOfUse) {
 
         int targetId = atoi(String(line[0]).c_str());
         if (targetId == id) {
-            char cache[13];
+            char cache[14];
             char* cachePtr = cache;
-            for (size_t i = 0; i <= 13; i++) {
-                if (i == 13) {
+            for (size_t i = 0; i <= 14; i++) {
+                if (i == 14) {
                     cache[i] = stateOfUse;
                     cache[i + 1] = '\0';
                     break;
@@ -411,18 +416,18 @@ User getUserData(int id) {
                 char* cachePtr = cache;
                 int j = 0;
                 User user;
-                for (size_t i = 0; i <= 13; i++) {
+                for (size_t i = 0; i <= 14; i++) {
                     if (i == 0) {
                         user.setSlot(id);
                     }
 
-                    if (i >= 2 && i <= 11) {
+                    if (i >= 2 && i <= 12) {
                         cache[j] = line[i];
                         user.setPhoneNumber(cachePtr);
                         j++;
                     }
 
-                    if (i == 13) {
+                    if (i == 14) {
                         user.setStateOfUse(atoi(String(line[i]).c_str()));
                     }
                 }
@@ -431,6 +436,22 @@ User getUserData(int id) {
             }
         }
     }
+}
+
+char* checkSlotUsage() {
+    char slotUsageDisplay[10];
+    char* slotUsageDisplayPtr = slotUsageDisplay;
+    strcpy(slotUsageDisplay, "");
+    File data = SD.open("userdata.txt");
+    if (data) {
+        while (data.available()) {
+            char* line = strdup(data.readStringUntil('\n').c_str());
+            strcat(slotUsageDisplay, String(line[0]).c_str());
+            strcat(slotUsageDisplay, "\n");
+        }
+    }
+
+    Serial.println(slotUsageDisplayPtr);
 }
 
 char* read(char* fileName) {
@@ -451,7 +472,7 @@ char* read(char* fileName) {
 }
 
 void sendTo(char* number, String message) {
-    *(number + 10) = '\0';
+    *(number + 11) = '\0';
 
     Serial.println("-------------------");
     Serial.println(number);
